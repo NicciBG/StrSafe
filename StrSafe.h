@@ -135,6 +135,18 @@ static inline void strsafe_array_free(StrSafe_array* strsafe_array) {
 }
 
 /**
+ * @brief Finds the first occurrence of a substring in a `StrSafe` string.
+ *
+ * @param haystack The string to search.
+ * @param needle The substring to find.
+ * @return Position of the first match, or -1 if not found.
+ */
+static inline ssize_t cstr_find(StrSafe* haystack, const char* needle) {
+	char* pos = strstr(haystack->data, needle);
+	return pos ? (ssize_t)(pos - haystack->data) : -1;
+}
+
+/**
  * @brief Replaces the first occurrence of a substring with another in a `StrSafe` string.
  *
  * This function allocates a new buffer sized exactly for the result and replaces
@@ -166,6 +178,24 @@ static inline StrSafe* cstr_replace(StrSafe* dst, const char* old_str, const cha
 	dst->len = final_len;
 	dst->cap = final_len + 1;
 	return dst;
+}
+
+/**
+ * @brief Counts the number of times a substring appears in a `StrSafe` string.
+ *
+ * @param haystack The string to search.
+ * @param needle The substring to count.
+ * @return Number of occurrences found.
+ */
+static inline size_t cstr_count(const StrSafe* haystack, const char* needle) {
+	size_t count = 0;
+	const char* p = haystack->data;
+	size_t needle_len = strlen(needle);
+	while ((p = strstr(p, needle))) {
+		++count;
+		p += needle_len;
+	}
+	return count;
 }
 
 /**
@@ -212,18 +242,6 @@ static inline StrSafe* cstr_replace_all(StrSafe* dst, const char* old_str, const
 }
 
 /**
- * @brief Finds the first occurrence of a substring in a `StrSafe` string.
- *
- * @param haystack The string to search.
- * @param needle The substring to find.
- * @return Position of the first match, or -1 if not found.
- */
-static inline ssize_t cstr_find(StrSafe* haystack, const char* needle) {
-	char* pos = strstr(haystack->data, needle);
-	return pos ? (ssize_t)(pos - haystack->data) : -1;
-}
-
-/**
  * @brief Finds the first occurrence of a substring starting from a given position.
  *
  * @param haystack The string to search.
@@ -247,24 +265,6 @@ static inline ssize_t cstr_find_from_pos(StrSafe* haystack, const char* needle, 
  */
 static inline bool cstr_compare(const StrSafe* a, const char* b) {
 	return strcmp(a->data, b) == 0;
-}
-
-/**
- * @brief Counts the number of times a substring appears in a `StrSafe` string.
- *
- * @param haystack The string to search.
- * @param needle The substring to count.
- * @return Number of occurrences found.
- */
-static inline size_t cstr_count(const StrSafe* haystack, const char* needle) {
-	size_t count = 0;
-	const char* p = haystack->data;
-	size_t needle_len = strlen(needle);
-	while ((p = strstr(p, needle))) {
-		++count;
-		p += needle_len;
-	}
-	return count;
 }
 
 /**
