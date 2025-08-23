@@ -12,31 +12,6 @@
  * `strsafe_` functions have the rest of the arguments, StrSafe (if the argument is string)
  * `cstr_` functions have the rest of the arguments char* (if the argument is string)
  *
- * @example
- * @code
- * #include "StrSafe.h"
- *
- * int main(void) {
- *     StrSafe s;
- *     strsafe_init(&s);
- *     strsafe_set(&s, "Hello, World!");
- *
- *     StrSafe suffix;
- *     strsafe_init(&suffix);
- *     strsafe_set(&suffix, " Goodbye!");
- *
- *     strsafe_append(&s, &suffix);
- *     // s now contains "Hello, World! Goodbye!"
- *
- *     StrSafe_array parts = strsafe_split(&s, &suffix);
- *     // parts.arr[0] contains "Hello, World!"
- *
- *     strsafe_array_free(&parts);
- *     strsafe_free(&s);
- *     strsafe_free(&suffix);
- *     return 0;
- * }
- * @endcode
  */
 
 #ifndef SAFE_STR_H
@@ -78,6 +53,15 @@ static inline void strsafe_init(StrSafe* strsafe) {
 }
 
 /**
+ * @brief Initializes a `StrSafe_array` string to empty.
+ * @param new_strsafe_array Pointer to the `StrSafe` to initialize.
+ */
+static inline void strsafe_array_init(StrSafe_array* new_strsafe_array) {
+	new_strsafe_array->arr = NULL;
+	new_strsafe_array->array_size = 0;
+}
+
+/**
  * @brief Frees memory used by a `StrSafe` string.
  * @param strsafe Pointer to the `StrSafe` to free.
  */
@@ -94,12 +78,22 @@ static inline void strsafe_free(StrSafe* strsafe) {
  * @param min_cap Minimum required capacity.
  * @return `true` if successful, `false` if allocation failed.
  */
-static inline bool strsafe_ensure_capacity(StrSafe* strsafe, size_t min_cap) {
-	if (strsafe->cap >= min_cap) return true;
-	char* new_data = realloc(strsafe->data, min_cap);
-	if (!new_data) return false;
-	strsafe->data = new_data;
-	strsafe->cap = min_cap;
+static inline bool strsafe_ensure_capacity(StrSafe* src, size_t min_cap) {
+
+	if (src->cap >= min_cap) {
+		return true;
+	}
+
+	size_t old_cap = src->cap;
+	char* new_data = realloc(src->data, min_cap);
+	if (!new_data) {
+		return false;
+	}
+
+	memset(new_data + old_cap, '\0', min_cap - old_cap);
+
+	src->data = new_data;
+	src->cap = min_cap;
 	return true;
 }
 
@@ -107,17 +101,17 @@ static inline bool strsafe_ensure_capacity(StrSafe* strsafe, size_t min_cap) {
  * @brief Trims the capacity of the string to fit its current length.
  * @param strsafe Pointer to the string.
  */
-static inline void strsafe_trim(StrSafe* strsafe) {
-	if (strsafe->len == 0) {
-		free(strsafe->data);
-		strsafe->data = NULL;
-		strsafe->cap = 0;
+static inline void strsafe_trim(StrSafe* src) {
+	if (src->len == 0) {
+		free(src->data);
+		src->data = NULL;
+		src->cap = 0;
 		return;
 	}
-	char* trimmed = realloc(strsafe->data, strsafe->len + 1);
+	char* trimmed = realloc(src->data, src->len + 1);
 	if (trimmed) {
-		strsafe->data = trimmed;
-		strsafe->cap = strsafe->len + 1;
+		src->data = trimmed;
+		src->cap = src->len + 1;
 	}
 }
 
@@ -692,30 +686,40 @@ static inline bool strsafe_appendv(StrSafe* dst, const StrSafe* first, ...) {
  * @param delim Delimiter string.
  * @return Array of substrings.
  */
-static inline StrSafe_array strsafe_split(StrSafe* src, const StrSafe* delim) {
-	StrSafe_array result = { 0 };
-	char* start = src->data;
-	char* end;
+static inline StrSafe_array strsafe_split_at(const StrSafe* src, size_t pos) {
+	StrSafe_array result = { NULL, 0 };
 
-	while ((end = strstr(start, delim->data))) {
-		size_t seg_len = end - start;
-		result.arr = realloc(result.arr, sizeof(StrSafe) * (result.array_size + 1));
-		StrSafe* seg = &result.arr[result.array_size++];
-		seg->data = malloc(seg_len + 1);
-		memcpy(seg->data, start, seg_len);
-		seg->data[seg_len] = '\0';
-		seg->len = seg_len;
-		seg->cap = seg_len + 1;
-		start = end + delim->len;
+	// clamp pos into [0..src->len]
+	if (pos > src->len) {
+		pos = src->len;
 	}
 
-	size_t rem_len = strlen(start);
-	result.arr = realloc(result.arr, sizeof(StrSafe) * (result.array_size + 1));
-	StrSafe* last = &result.arr[result.array_size++];
-	last->data = malloc(rem_len + 1);
-	memcpy(last->data, start, rem_len + 1);
-	last->len = rem_len;
-	last->cap = rem_len + 1;
+	// allocate space for two segments
+	result.arr = malloc(sizeof(StrSafe) * 2);
+	if (!result.arr) {
+		return result;  // array_size stays 0 on alloc failure
+	}
+
+	// first segment = src->data[0 .. pos-1]
+	StrSafe* seg0 = &result.arr[result.array_size++];
+	seg0->len = pos;
+	seg0->cap = pos + 1;
+	seg0->data = malloc(seg0->cap);
+	if (seg0->data) {
+		memcpy(seg0->data, src->data, pos);
+		seg0->data[pos] = '\0';
+	}
+
+	// second segment = src->data[pos .. end]
+	size_t rem_len = src->len - pos;
+	StrSafe* seg1 = &result.arr[result.array_size++];
+	seg1->len = rem_len;
+	seg1->cap = rem_len + 1;
+	seg1->data = malloc(seg1->cap);
+	if (seg1->data) {
+		memcpy(seg1->data, src->data + pos, rem_len);
+		seg1->data[rem_len] = '\0';
+	}
 
 	return result;
 }
